@@ -20,8 +20,14 @@ const unidadesDisponibles = ref([])
 const busquedaColonia = ref('')
 const sugerenciasDireccion = ref([])
 const buscandoDireccion = ref(false)
+const buscandoColonias = ref(false)
+const coloniaSeleccionada = ref(false)
 let timerDireccion = null
+let timerColonia = null
 let timerReverseGeo = null
+
+// Validación de campos
+const erroresCampos = ref({})
 
 // Minimapa refs
 let minimap = null
@@ -85,6 +91,15 @@ const bordeEstado = (estado) => {
   return mapa[estado] || 'none'
 }
 
+const formatDireccion = (em) => {
+  if (!em.ubicacion) return 'Sin ubicación'
+  const { calle, colonia } = em.ubicacion
+  if (calle && colonia) return `${calle}, ${colonia}`
+  if (calle) return calle
+  if (colonia) return colonia
+  return 'Ubicación seleccionada'
+}
+
 // Cargar catálogos al abrir formulario
 const abrirFormulario = async () => {
   mostrarFormulario.value = true
@@ -102,11 +117,27 @@ const abrirFormulario = async () => {
   }
 }
 
-const buscarColonias = async () => {
+const buscarColonias = () => {
+  if (timerColonia) clearTimeout(timerColonia)
+  coloniaSeleccionada.value = false // usuario está editando, resetear flag
+  // Limpiar selección si el usuario borra el campo
+  if (!busquedaColonia.value) {
+    colonias.value = []
+    form.value.ubicacion.colonia = ''
+    return
+  }
   if (busquedaColonia.value.length < 2) return
-  try {
-    colonias.value = await catalogosService.colonias(busquedaColonia.value)
-  } catch (e) { /* silenciar */ }
+
+  timerColonia = setTimeout(async () => {
+    buscandoColonias.value = true
+    try {
+      colonias.value = await catalogosService.colonias(busquedaColonia.value)
+    } catch (e) {
+      console.error('Error buscando colonias:', e)
+    } finally {
+      buscandoColonias.value = false
+    }
+  }, 300)
 }
 
 const buscarDirecciones = () => {
@@ -121,8 +152,11 @@ const buscarDirecciones = () => {
   timerDireccion = setTimeout(async () => {
     buscandoDireccion.value = true
     try {
-      const q = encodeURIComponent(form.value.ubicacion.calle)
-      // Acotado a Mexico y el area de Zapopan (viewbox + bounded)
+      // Si ya hay colonia seleccionada, incluirla en la búsqueda para mejores resultados
+      let queryParts = [form.value.ubicacion.calle]
+      if (form.value.ubicacion.colonia) queryParts.push(form.value.ubicacion.colonia)
+      queryParts.push('Zapopan')
+      const q = encodeURIComponent(queryParts.join(', '))
       const url = `https://nominatim.openstreetmap.org/search?format=json&q=${q}&countrycodes=mx&viewbox=-103.55,20.85,-103.25,20.55&bounded=1&addressdetails=1&limit=5&email=rsoto@coe.zapopan.gob.mx`
       
       const res = await fetch(url, {
@@ -140,6 +174,8 @@ const buscarDirecciones = () => {
     } finally {
       buscandoDireccion.value = false
     }
+    // Si ya hay colonia, intentar geocodificar el domicilio completo
+    geocodificarDireccion()
   }, 650)
 }
 
@@ -156,6 +192,7 @@ const seleccionarDireccion = (sug) => {
     if (col) {
       form.value.ubicacion.colonia = col
       busquedaColonia.value = col
+      coloniaSeleccionada.value = true
     }
   }
 
@@ -173,6 +210,44 @@ const seleccionarColonia = (colonia) => {
   form.value.ubicacion.colonia = colonia.nombre
   busquedaColonia.value = colonia.nombre
   colonias.value = []
+  coloniaSeleccionada.value = true
+  // Si ya hay calle, geocodificar automáticamente
+  geocodificarDireccion()
+}
+
+// ── Geocodificación automática: calle + colonia → pin en mapa ───────────────
+const geocodificarDireccion = () => {
+  const calle = form.value.ubicacion.calle?.trim()
+  const colonia = form.value.ubicacion.colonia?.trim()
+  if (!calle || calle.length < 3 || !colonia || colonia.length < 2) return
+
+  // Debounce para no saturar Nominatim
+  if (timerReverseGeo) clearTimeout(timerReverseGeo)
+  timerReverseGeo = setTimeout(async () => {
+    try {
+      const q = encodeURIComponent(`${calle}, ${colonia}, Zapopan, Jalisco, México`)
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${q}&countrycodes=mx&viewbox=-103.55,20.85,-103.25,20.55&bounded=1&addressdetails=1&limit=1&email=rsoto@coe.zapopan.gob.mx`
+      const res = await fetch(url, {
+        headers: { 'Accept-Language': 'es-MX', 'User-Agent': 'COE-Zapopan-PWA' }
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.length > 0) {
+          const lat = parseFloat(data[0].lat)
+          const lng = parseFloat(data[0].lon)
+          form.value.ubicacion.lat = lat
+          form.value.ubicacion.lng = lng
+          // Mover el pin del minimapa
+          if (minimap && minimapMarker) {
+            minimap.setView([lat, lng], 16)
+            minimapMarker.setLatLng([lat, lng])
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error geocodificando dirección:', e)
+    }
+  }, 500)
 }
 
 // ── Lógica de Minimapa y Reverse Geocoding ──────────────────────────────────
@@ -307,20 +382,49 @@ const resetForm = () => {
     notas: '', telefonoContacto: '', nombreContacto: '', dependenciasApoyo: [],
   }
   busquedaColonia.value = ''
+  colonias.value = []
+  coloniaSeleccionada.value = false
   sugerenciasDireccion.value = []
   formError.value = ''
+  erroresCampos.value = {}
 }
 
 const guardarEmergencia = async () => {
   if (guardando.value) return // anti double-click
   formError.value = ''
-  
+  erroresCampos.value = {}
+
+  // Si el usuario escribió en el campo pero no seleccionó del dropdown, aceptar el texto
   if (!form.value.ubicacion.colonia && busquedaColonia.value) {
     form.value.ubicacion.colonia = busquedaColonia.value
   }
-  
-  if (!form.value.tipo || !form.value.ubicacion.colonia || !form.value.ubicacion.calle || !form.value.prioridad) {
-    formError.value = 'Completa los campos obligatorios: tipo de incidente, zona / colonia, calle y prioridad'
+
+  // ── Validación campo a campo ───────────────────────────────────────
+  let hayErrores = false
+
+  if (!form.value.catalogoIncidente) {
+    erroresCampos.value.incidente = 'Selecciona el tipo de incidente'
+    hayErrores = true
+  }
+  if (!form.value.ubicacion.colonia) {
+    erroresCampos.value.colonia = 'Escribe o selecciona una colonia'
+    hayErrores = true
+  }
+  if (!form.value.ubicacion.calle || form.value.ubicacion.calle.trim().length < 3) {
+    erroresCampos.value.calle = 'Ingresa la calle (mínimo 3 caracteres)'
+    hayErrores = true
+  }
+  if (!form.value.prioridad) {
+    erroresCampos.value.prioridad = 'Selecciona la prioridad'
+    hayErrores = true
+  }
+
+  if (hayErrores) {
+    formError.value = '⚠ Completa todos los campos obligatorios marcados con *'
+    // Hacer scroll al primer error
+    await nextTick()
+    const primerError = document.querySelector('.campo-error')
+    if (primerError) primerError.scrollIntoView({ behavior: 'smooth', block: 'center' })
     return
   }
 
@@ -336,13 +440,18 @@ const guardarEmergencia = async () => {
   const int = form.value.ubicacion.numeroInterior ? ` Int. ${form.value.ubicacion.numeroInterior}` : ''
   const col = form.value.ubicacion.colonia ? `, Col. ${form.value.ubicacion.colonia}` : ''
   const refText = form.value.ubicacion.referencias ? ` (Ref: ${form.value.ubicacion.referencias})` : ''
-  
+
   form.value.ubicacion.direccionCompleta = `${c}${ext}${int}${col}${refText}`
 
   guardando.value = true
   try {
     const res = await store.crear(form.value)
     if (res.exito) {
+      if (res.offline) {
+        alert('📴 Registrado sin conexión. El incidente se sincronizará automáticamente al recuperar internet.')
+      } else {
+        alert('✅ Incidente registrado correctamente.')
+      }
       mostrarFormulario.value = false
       resetForm()
     } else {
@@ -373,8 +482,12 @@ const cerrarEmergencia = async (id) => {
   emergenciaSeleccionada.value = null
 }
 
-onMounted(() => {
+onMounted(async () => {
   store.cargarActivas()
+  try {
+    const { initOfflineSync } = await import('@/services/offlineSync.js')
+    initOfflineSync()
+  } catch (e) {}
 })
 
 // Mantener emergenciaSeleccionada sincronizada con actualizaciones del store
@@ -466,7 +579,7 @@ watch(
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
                 <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
               </svg>
-              {{ em.zona }}
+              {{ formatDireccion(em) }}
             </span>
           </div>
           <div class="em-footer">
@@ -495,39 +608,64 @@ watch(
 
         <form @submit.prevent="guardarEmergencia" class="form-emergencia">
           <!-- Tipo de incidente -->
-          <div class="form-campo">
+          <div class="form-campo" :class="{ 'campo-error': erroresCampos.incidente }">
             <label class="form-label">Tipo de incidente *</label>
-            <select class="input" v-model="form.catalogoIncidente" @change="seleccionarIncidente(incidentes.find(i => i._id === form.catalogoIncidente))">
-              <option :value="null" disabled>Selecciona del catálogo CNIE...</option>
-              <option v-for="inc in incidentes" :key="inc._id" :value="inc._id">
+            <select class="input input-select-custom" :class="{ 'input-error': erroresCampos.incidente }" v-model="form.catalogoIncidente" @change="seleccionarIncidente(incidentes.find(i => i._id === form.catalogoIncidente)); erroresCampos.incidente = null">
+              <option :value="null" disabled style="background:#1e293b; color:#94a3b8;">Selecciona del catálogo CNIE...</option>
+              <option v-for="inc in incidentes" :key="inc._id" :value="inc._id" style="background:#1e293b; color:#ffffff; padding:8px;">
                 {{ inc.codigo_cnie }} — {{ inc.nombre }}
               </option>
             </select>
+            <span v-if="erroresCampos.incidente" class="mensaje-error">{{ erroresCampos.incidente }}</span>
           </div>
 
           <!-- Zona / Colonia -->
-          <div class="form-campo">
+          <div class="form-campo" :class="{ 'campo-error': erroresCampos.colonia }">
             <label class="form-label">Zona / Colonia *</label>
             <div class="autocomplete-wrap">
-              <input class="input" v-model="busquedaColonia" @input="buscarColonias" placeholder="Buscar colonia..." />
-              <div v-if="colonias.length > 0" class="autocomplete-dropdown">
+              <input
+                class="input"
+                :class="{ 'input-error': erroresCampos.colonia }"
+                v-model="busquedaColonia"
+                @input="buscarColonias(); erroresCampos.colonia = null"
+                placeholder="Escribe el nombre de la colonia..."
+                autocomplete="off"
+              />
+              <!-- Buscando -->
+              <div v-if="buscandoColonias" class="autocomplete-dropdown" style="padding:10px;font-size:0.75rem;color:var(--texto-dim);">
+                Buscando colonias...
+              </div>
+              <!-- Resultados -->
+              <div v-else-if="colonias.length > 0" class="autocomplete-dropdown">
                 <div
                   v-for="col in colonias"
                   :key="col._id"
                   class="autocomplete-item"
-                  @click="seleccionarColonia(col)"
+                  @click="seleccionarColonia(col); erroresCampos.colonia = null"
                 >
                   {{ col.nombre }} <span class="texto-muted texto-xs">({{ col.tipo }} — CP {{ col.codigoPostal }})</span>
                 </div>
               </div>
+              <!-- Sin resultados (solo si NO acaba de seleccionar una) -->
+              <div v-else-if="busquedaColonia.length >= 2 && !buscandoColonias && colonias.length === 0 && !coloniaSeleccionada" class="autocomplete-dropdown" style="padding:10px;font-size:0.75rem;color:var(--texto-dim);">
+                No se encontraron colonias. Puedes escribir el nombre manualmente.
+              </div>
             </div>
+            <span v-if="erroresCampos.colonia" class="mensaje-error">{{ erroresCampos.colonia }}</span>
           </div>
 
           <!-- Calle (Autocomplete Nominatim) -->
-          <div class="form-campo">
+          <div class="form-campo" :class="{ 'campo-error': erroresCampos.calle }">
             <label class="form-label">Calle *</label>
             <div class="autocomplete-wrap">
-              <input class="input" v-model="form.ubicacion.calle" @input="buscarDirecciones" placeholder="Calle / Av..." autocomplete="off" />
+              <input
+                class="input"
+                :class="{ 'input-error': erroresCampos.calle }"
+                v-model="form.ubicacion.calle"
+                @input="buscarDirecciones(); erroresCampos.calle = null"
+                placeholder="Calle / Av..."
+                autocomplete="off"
+              />
               <div v-if="buscandoDireccion" class="autocomplete-dropdown" style="padding:10px;font-size:0.75rem;color:var(--texto-dim);">
                 Buscando calles en tiempo real...
               </div>
@@ -542,6 +680,7 @@ watch(
                 </div>
               </div>
             </div>
+            <span v-if="erroresCampos.calle" class="mensaje-error">{{ erroresCampos.calle }}</span>
           </div>
 
           <!-- Números Exterior e Interior -->
@@ -690,18 +829,40 @@ watch(
             <button class="btn btn-primario w-full" @click="asignarRapido(emergenciaSeleccionada._id)">
               Asignar unidad
             </button>
-            <!-- Selector de unidad -->
-            <div v-if="unidadesDisponibles.length > 0" class="unidades-lista">
-              <p class="texto-sm texto-muted" style="margin-bottom:8px;">Selecciona unidad disponible:</p>
-              <button
-                v-for="u in unidadesDisponibles"
-                :key="u._id"
-                class="unidad-opcion"
-                @click="confirmarAsignacion(emergenciaSeleccionada._id, u._id)"
-              >
-                <span class="texto-sm" style="color:var(--texto-blanco);">{{ u.nombre }}</span>
-                <span class="texto-xs texto-muted">{{ u.tipo }} · {{ u.base }}</span>
-              </button>
+            <!-- Selector de unidad con diseño táctico sobrio (Cuerpo de Bomberos) -->
+            <div v-if="unidadesDisponibles.length > 0" class="dispatch-unidades-container" style="margin-top:14px; background:#18181b; padding:14px; border-radius:10px; border:1px solid #27272a;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <span style="color:#e4e4e7; font-weight:700; font-size:0.8rem; text-transform:uppercase; letter-spacing:0.8px;">Unidades listas para despacho</span>
+                <span style="background:#27272a; color:#a1a1aa; font-size:0.72rem; padding:2px 8px; border-radius:4px; font-weight:600;">{{ unidadesDisponibles.length }} en base</span>
+              </div>
+
+              <div class="unidades-grid-cards" style="display:grid; grid-template-columns: 1fr; gap:8px;">
+                <button
+                  v-for="u in unidadesDisponibles"
+                  :key="u._id"
+                  class="card-unidad-dispatch"
+                  @click="confirmarAsignacion(emergenciaSeleccionada._id, u._id)"
+                  style="background:#27272a; border:1px solid #3f3f46; border-left:4px solid #dc2626; border-radius:6px; padding:10px 14px; text-align:left; cursor:pointer; transition:all 0.2s ease;"
+                >
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span style="color:#ffffff; font-weight:700; font-size:0.95rem; letter-spacing:0.3px;">
+                      {{ u.tipo === 'Ambulancia' ? '🚑' : u.tipo === 'Bomba' ? '🚒' : u.tipo === 'Rescate' ? '🛟' : '🚓' }} {{ u.nombre }}
+                    </span>
+                    <span style="background:#450a0a; color:#fca5a5; border:1px solid #991b1b; font-size:0.68rem; font-weight:700; padding:2px 8px; border-radius:4px; letter-spacing:0.5px;">
+                      DISPONIBLE
+                    </span>
+                  </div>
+                  
+                  <div style="display:flex; gap:12px; margin-top:8px; font-size:0.75rem;">
+                    <span style="background:#18181b; padding:3px 8px; border-radius:4px; color:#e4e4e7; border:1px solid #3f3f46;">
+                      Tipo: <strong style="color:#ffffff;">{{ u.tipo }}</strong>
+                    </span>
+                    <span style="background:#18181b; padding:3px 8px; border-radius:4px; color:#e4e4e7; border:1px solid #3f3f46;">
+                      Base: <strong style="color:#ffffff;">{{ u.base }}</strong>
+                    </span>
+                  </div>
+                </button>
+              </div>
             </div>
           </template>
 
@@ -843,6 +1004,12 @@ watch(
 .prioridad-selector .chip { cursor: pointer; opacity: 0.5; transition: opacity var(--trans); }
 .prioridad-selector .chip.seleccionada { opacity: 1; transform: scale(1.05); }
 
+.input-select-custom option {
+  background-color: #1e293b !important;
+  color: #ffffff !important;
+  padding: 10px;
+}
+
 /* Autocomplete */
 .autocomplete-wrap { position: relative; }
 .autocomplete-dropdown {
@@ -862,6 +1029,23 @@ watch(
 }
 .dep-chip:hover { border-color: var(--rojo-borde); }
 .dep-chip.activo { background: var(--rojo-suave); border-color: var(--rojo); color: var(--rojo); }
+
+/* Validación de campos */
+.input-error { border-color: #ef4444 !important; box-shadow: 0 0 0 2px rgba(239,68,68,0.15) !important; }
+.campo-error .form-label { color: #ef4444; }
+.mensaje-error {
+  display: block;
+  font-size: 0.72rem;
+  color: #ef4444;
+  margin-top: 4px;
+  padding-left: 2px;
+  animation: shake 0.3s ease;
+}
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
 
 /* Métricas */
 .metricas-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }
@@ -886,6 +1070,12 @@ watch(
 
 /* Sin selección */
 .detalle-vacio { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 16px; text-align: center; }
+
+.card-unidad-dispatch:hover {
+  background: #3f3f46 !important;
+  border-color: #ef4444 !important;
+  transform: translateY(-1px);
+}
 
 @keyframes girar { to { transform: rotate(360deg); } }
 

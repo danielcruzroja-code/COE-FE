@@ -13,7 +13,7 @@ const cargarDatos = async () => {
   cargando.value = true
   try {
     const [resEmergencias, resStats] = await Promise.all([
-      api.get('/emergencias'),
+      api.get('/emergencias?limite=500'),
       api.get('/emergencias/stats')
     ])
     emergencias.value = resEmergencias.data.emergencias || []
@@ -76,15 +76,25 @@ const generarPDF = () => {
   doc.setFontSize(11)
   doc.text(`Reporte Global COE Zapopan - Generado: ${new Date().toLocaleString()}`, 14, 30)
 
-  const head = [['Folio ID', 'Prioridad', 'Estado', 'Tipo', 'Colonia', 'Tiempo Resp.']]
-  const body = emergenciasFiltradas.value.map(em => [
-    em.folio,
-    em.prioridad.toUpperCase(),
-    em.estado.toUpperCase(),
-    em.tipo,
-    em.ubicacion?.colonia || em.zona || 'Desconocida',
-    calcularTiempoRespuestaFormateado(em)
-  ])
+  const head = [['Folio ID', 'Prioridad', 'Estado', 'Tipo', 'Ubicación', 'Tiempo Resp.']]
+  const body = emergenciasFiltradas.value.map(em => {
+    let ubiStr = 'Desconocida'
+    if (em.ubicacion) {
+      if (em.ubicacion.colonia && em.ubicacion.calle) {
+        ubiStr = `${em.ubicacion.calle}, ${em.ubicacion.colonia}`
+      } else {
+        ubiStr = em.ubicacion.colonia || em.ubicacion.calle || 'Desconocida'
+      }
+    }
+    return [
+      em.folio,
+      em.prioridad.toUpperCase(),
+      em.estado.toUpperCase(),
+      em.tipo,
+      ubiStr,
+      calcularTiempoRespuestaFormateado(em)
+    ]
+  })
 
   doc.autoTable({
     startY: 40,
@@ -194,7 +204,7 @@ const IconoCopiar = `<svg fill="none" viewBox="0 0 24 24" stroke="currentColor" 
                   <span class="tiempo-badge">{{ calcularTiempoRespuestaFormateado(em) }}</span>
                 </td>
                 <td class="ubicacion-cell">
-                  {{ em.ubicacion?.colonia || em.zona || 'Desconocida' }}
+                  {{ em.ubicacion?.calle ? em.ubicacion.calle + ', ' : '' }}{{ em.ubicacion?.colonia || 'Desconocida' }}
                 </td>
                 <td>
                   <span class="status-chip">

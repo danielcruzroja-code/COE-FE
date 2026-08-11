@@ -46,11 +46,38 @@ export const useEmergenciasStore = defineStore('emergencias', () => {
 
   const crear = async (payload) => {
     error.value = null
+
+    // ── Si no hay internet, encolar creación localmente ──
+    if (!navigator.onLine) {
+      const { enqueue } = await import('@/services/offlineSync.js')
+      const localId = 'temp_' + Date.now()
+      
+      const localEmergencia = {
+        _id: localId,
+        folio: `TEMP-${Date.now().toString().slice(-4)}`,
+        tipo: payload.tipo,
+        subtipo: payload.subtipo,
+        prioridad: payload.prioridad,
+        ubicacion: payload.ubicacion,
+        estado: 'nuevo',
+        tiempoReporte: new Date().toISOString(),
+        personas: payload.personas || 0,
+        animales: payload.animales || 0,
+        notas: payload.notas || ''
+      }
+      
+      enqueue({
+        type: 'create-emergencia',
+        payload
+      })
+
+      // Agregar a la lista para visualización local
+      agregarNueva(localEmergencia)
+      return { exito: true, emergencia: localEmergencia, offline: true }
+    }
+
     try {
       const nueva = await emergenciasService.crear(payload)
-      // NO insertar aquí — Socket.io 'emergencia:nueva' la agrega
-      // para evitar duplicados. Si Socket.io no la trae (ej: offline),
-      // agregarNueva() tiene guard contra duplicados.
       agregarNueva(nueva)
       return { exito: true, emergencia: nueva }
     } catch (err) {

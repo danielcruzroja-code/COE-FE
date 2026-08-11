@@ -590,18 +590,34 @@ watch([verEmergencias, verUnidades, filtroPrioridad], () => {
           Asignando unidad para: <strong>{{ emergenciaParaDespachar?.folio }}</strong>
         </p>
 
-        <div v-if="unidadesDisponibles.length === 0" class="texto-xs pad-10 text-center text-red">
-          No hay unidades disponibles en base en este momento.
+        <div v-if="unidadesDisponibles.length === 0" class="texto-xs pad-10 text-center" style="color:#fca5a5; background:#27272a; border-radius:6px; padding:12px; border:1px solid #3f3f46;">
+          ⚠️ No hay unidades disponibles en base en este momento.
         </div>
-        <div v-else class="unidades-despacho-list">
+        <div v-else class="unidades-despacho-list" style="display:flex; flex-direction:column; gap:8px; max-height:350px; overflow-y:auto;">
           <button
             v-for="u in unidadesDisponibles"
             :key="u._id"
-            class="unidad-opcion"
+            class="card-unidad-dispatch-mapa"
             @click="despacharUnidad(u._id)"
+            style="background:#27272a; border:1px solid #3f3f46; border-left:4px solid #dc2626; border-radius:6px; padding:10px 14px; text-align:left; cursor:pointer; transition:all 0.2s ease;"
           >
-            <span style="font-weight:600;color:var(--texto-blanco);">{{ u.nombre }}</span>
-            <span class="texto-xs texto-muted">{{ u.tipo }} · {{ u.base }}</span>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="color:#ffffff; font-weight:700; font-size:0.95rem;">
+                {{ u.tipo === 'Ambulancia' ? '🚑' : u.tipo === 'Bomba' ? '🚒' : u.tipo === 'Rescate' ? '🛟' : '🚓' }} {{ u.nombre }}
+              </span>
+              <span style="background:#450a0a; color:#fca5a5; border:1px solid #991b1b; font-size:0.65rem; font-weight:700; padding:2px 6px; border-radius:4px; letter-spacing:0.5px;">
+                DISPONIBLE
+              </span>
+            </div>
+            
+            <div style="display:flex; gap:10px; margin-top:6px; font-size:0.75rem;">
+              <span style="background:#18181b; padding:2px 6px; border-radius:4px; color:#e4e4e7; border:1px solid #3f3f46;">
+                Tipo: <strong style="color:#ffffff;">{{ u.tipo }}</strong>
+              </span>
+              <span style="background:#18181b; padding:2px 6px; border-radius:4px; color:#e4e4e7; border:1px solid #3f3f46;">
+                Base: <strong style="color:#ffffff;">{{ u.base }}</strong>
+              </span>
+            </div>
           </button>
         </div>
       </div>
@@ -1111,4 +1127,10 @@ watch([verEmergencias, verUnidades, filtroPrioridad], () => {
 .form-label { font-size: 0.72rem; color: var(--texto-dim); margin-bottom: 4px; display: block; }
 .form-acciones { display: flex; gap: 8px; justify-content: flex-end; }
 .login-error { background: rgba(220, 38, 38, 0.15); border: 1px solid var(--rojo-borde); padding: 8px 12px; border-radius: 6px; color: #fca5a5; font-size: 0.75rem; }
+
+.card-unidad-dispatch-mapa:hover {
+  background: #3f3f46 !important;
+  border-color: #ef4444 !important;
+  transform: translateY(-1px);
+}
 </style>

@@ -55,7 +55,8 @@ export const useSocket = () => {
   }
 
   return {
-    socket,
+    get socket() { return socket }, // Getter reactivo (más seguro)
+    getSocket: () => socket,
     initSocket,
     disconnectSocket
   }

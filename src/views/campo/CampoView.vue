@@ -25,7 +25,7 @@ const conexion = reactive({
 })
 
 const auth = useAuthStore()
-const { socket } = useSocket()
+const { getSocket, initSocket, disconnectSocket } = useSocket()
 const { rastreando, latitud, longitud, error: gpsError, iniciarRastreo, detenerRastreo } = useGeolocalizacion()
 
 const cargando = ref(false)
@@ -210,6 +210,7 @@ const cambiarEstado = async (nuevoEstado) => {
     })
     unidadInfo.value = res.data
 
+    const socket = getSocket()
     if (socket) {
       socket.emit('unidad:estado', {
         unidadId: auth.usuario.unidadAsignada,
@@ -304,6 +305,7 @@ const guardarReporteCampo = async (finalizar = false) => {
 
 // Transmitir coordenadas GPS por socket
 const transmitirUbicacion = (coords) => {
+  const socket = getSocket()
   if (!auth.usuario?.unidadAsignada || !socket) return
   socket.emit('ubicacion:update', {
     unidadId: auth.usuario.unidadAsignada,
@@ -342,6 +344,7 @@ onMounted(async () => {
     conexion.lastSyncResult = state.lastSyncResult
   })
 
+  initSocket()
   await cargarDatos()
   iniciarRastreo(transmitirUbicacion)
 
@@ -366,6 +369,7 @@ onMounted(async () => {
     syncPending()
   }
 
+  const socket = getSocket()
   if (socket) {
     socket.on('emergencia:actualizada', async (em) => {
       if (em.unidadAsignada?._id === auth.usuario.unidadAsignada) {
@@ -384,10 +388,13 @@ onUnmounted(() => {
   detenerRastreo()
   destroyOfflineSync()
   if (draftInterval) clearInterval(draftInterval)
+  
+  const socket = getSocket()
   if (socket) {
     socket.off('emergencia:actualizada')
     socket.off('emergencia:nueva')
   }
+  disconnectSocket()
 })
 </script>
 

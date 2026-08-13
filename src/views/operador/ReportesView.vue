@@ -832,6 +832,17 @@ const exportarDocumentoPDF = (em) => {
                       </div>
                     </div>
                   </details>
+                  <!-- 11. Evidencia Fotográfica -->
+                  <details class="doc-section" v-if="emergenciaDetalle.reporteCampo.imagenEscenaUrl">
+                    <summary class="doc-section-title">
+                      <span class="doc-section-num">11</span> Evidencia Fotográfica
+                    </summary>
+                    <div class="doc-section-content text-center">
+                      <div class="doc-img-container">
+                        <img :src="emergenciaDetalle.reporteCampo.imagenEscenaUrl" alt="Fotografía de la Escena" class="doc-evidencia-img" />
+                      </div>
+                    </div>
+                  </details>
                 </template>
 
                 <!-- Sin reporte de campo -->
@@ -1570,5 +1581,20 @@ const exportarDocumentoPDF = (em) => {
 .doc-empty-report p {
   font-size: 0.88rem;
   line-height: 1.5;
+}
+
+/* Evidencia fotográfica */
+.doc-img-container {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0;
+}
+.doc-evidencia-img {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: 8px;
+  border: 1px solid #2d1f1f;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+  object-fit: contain;
 }
 </style>

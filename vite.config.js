@@ -8,7 +8,7 @@ export default defineConfig({
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'logo-coe.png'],
+      includeAssets: ['favicon.png', 'logo-coe.png'],
       manifest: {
         name: 'COE Zapopan — Sistema de Emergencias',
         short_name: 'COE Zapopan',

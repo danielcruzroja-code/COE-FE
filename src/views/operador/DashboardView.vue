@@ -13,7 +13,7 @@ import {
 } from 'chart.js'
 import { Bar, Doughnut } from 'vue-chartjs'
 import { jsPDF } from 'jspdf'
-import 'jspdf-autotable'
+import autoTable from 'jspdf-autotable'
 
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale, ArcElement)
 
@@ -187,7 +187,7 @@ const exportarReporte = () => {
     u.idUnidad, u.tipo, u.serviciosHoy, u.tiempoActivo, u.estado.toUpperCase()
   ])
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: 40,
     head: head,
     body: body,

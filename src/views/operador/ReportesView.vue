@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { jsPDF } from 'jspdf'
-import 'jspdf-autotable'
+import autoTable from 'jspdf-autotable'
 import api from '@/services/api.js'
 
 const emergencias = ref([])
@@ -165,7 +165,7 @@ const generarPDF = () => {
     ]
   })
 
-  doc.autoTable({
+  autoTable(doc, {
     startY: 40,
     head: head,
     body: body,

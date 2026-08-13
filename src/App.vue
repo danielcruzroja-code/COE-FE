@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted } from 'vue'
 import { useEmergenciasStore } from '@/stores/emergencias.js'
 import { useUnidadesStore } from '@/stores/unidades.js'
+import { useAuthStore } from '@/stores/auth.js'
 import { emergenciasService } from '@/services/emergencias.service.js'
 import { unidadesService } from '@/services/unidades.service.js'
 
@@ -13,6 +14,9 @@ onMounted(() => {
   const unidadesStore = useUnidadesStore()
 
   pollingInterval = setInterval(async () => {
+    const authStore = useAuthStore()
+    if (!authStore.estaAutenticado) return // No hacer peticiones si no hay sesión activa
+
     try {
       const [nuevasEmergencias, nuevasUnidades] = await Promise.all([
         emergenciasService.activas(),
